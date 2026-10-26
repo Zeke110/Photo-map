@@ -1416,7 +1416,13 @@ function toast(msg, undo){ $('#toastText').textContent = msg; const u = $('#toas
 async function offerFile(filename, data){
   let dl = null; try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch(e){}
   if (dl){ try { await dl.save({filename, data}); return true; } catch(err){ if (err && err.code === 'declined') return false; toast('파일을 저장하지 못했어요. 잠시 뒤 다시 해 보세요.'); return false; } }
-  try { const blob = data instanceof Blob ? data : new Blob([data]); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); a.remove(); return true; } catch(e){ toast('이 화면에서는 파일을 저장할 수 없어요.'); return false; }
+  const type = /\.png$/i.test(filename) ? 'image/png' : 'application/json';
+  const blob = data instanceof Blob ? (data.type ? data : new Blob([data], {type})) : new Blob([data], {type});
+  if (isMobile && navigator.canShare){
+    try { const f = new File([blob], filename, {type: blob.type}); if (navigator.canShare({files:[f]})){ await navigator.share({files:[f], title:'사진 지도'}); return true; } }
+    catch(err){ if (err && err.name === 'AbortError') return false; }
+  }
+  try { const u = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = u; a.download = filename; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 60000); if (isMobile) toast(`‘${filename}’을 내려받았어요. 내 파일의 다운로드 폴더에 있어요.`); return true; } catch(e){ toast('이 화면에서는 파일을 저장할 수 없어요.'); return false; }
 }
 function saveBackup(){
   const tags = {}; for (const p of photos.values()) if (p.manual) tags[p.key] = p.manual;
