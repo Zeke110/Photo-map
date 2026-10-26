@@ -1572,36 +1572,89 @@ async function wipe(){
 
 /* ---------- share image ---------- */
 $('#btnShare').onclick = async () => {
-  const gs = groups.filter(g => g.r.polys); if (!gs.length){ toast('지도에 채운 지역이 아직 없어요.'); return; }
-  const W = 1080, H = 1350, MH = 1130, pad = 70;
+  const mainBB = r => { if (r._mbb) return r._mbb; const ps = r.polys.map(p => { const ring = p[0]; let a=Infinity,b=Infinity,c=-Infinity,d=-Infinity,ar=0; for (let i=0,j=ring.length-1;i<ring.length;j=i++){ const x=ring[i][0], y=ring[i][1]; if(x<a)a=x; if(x>c)c=x; if(y<b)b=y; if(y>d)d=y; ar += (ring[j][0]+x)*(ring[j][1]-y); } return {bb:[a,b,c,d], area: Math.abs(ar)*Math.cos((b+d)/2*Math.PI/180)}; }); const m = ps.reduce((q,p) => p.area > q.area ? p : q, ps[0]); const lim = Math.max(r.level === 0 ? 15 : 0, 1.5*Math.hypot(m.bb[2]-m.bb[0], m.bb[3]-m.bb[1])); const mx=(m.bb[0]+m.bb[2])/2, my=(m.bb[1]+m.bb[3])/2; const o = [...m.bb]; for (const p of ps){ if (Math.hypot((p.bb[0]+p.bb[2])/2-mx, (p.bb[1]+p.bb[3])/2-my) <= lim){ o[0]=Math.min(o[0],p.bb[0]); o[1]=Math.min(o[1],p.bb[1]); o[2]=Math.max(o[2],p.bb[2]); o[3]=Math.max(o[3],p.bb[3]); } } return r._mbb = o; };
+  const deep = groupAt(2).filter(g => g.r.polys); if (!deep.length){ toast('지도에 채운 지역이 아직 없어요.'); return; }
+  let sa=Infinity, sb=Infinity, sc=-Infinity, sd=-Infinity; for (const g of deep){ const bb = mainBB(g.r); if (bb[2]-bb[0] > 180) continue; sa=Math.min(sa,bb[0]); sb=Math.min(sb,bb[1]); sc=Math.max(sc,bb[2]); sd=Math.max(sd,bb[3]); }
+  const span = isFinite(sa) ? Math.max(sc-sa, sd-sb) : 360; const SL = span > 30 ? 0 : span > 5 ? 1 : 2;
+  const gs = groupAt(SL).filter(g => g.r.polys);
+  const W = 1080, H = 1350, MH = 740, pad = 60;
+  const C = n => css(n), FONT = css('--sans'), EDGE = css('--edgefont');
   const merc = (lng, lat) => [lng, Math.log(Math.tan(Math.PI/4 + Math.max(-85,Math.min(85,lat))*Math.PI/360))*180/Math.PI];
   let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
-  for (const g of gs){ const [a,b,c,d] = g.r.bbox; if (c-a > 180) continue; const p=merc(a,b), q=merc(c,d); x0=Math.min(x0,p[0]); y0=Math.min(y0,p[1]); x1=Math.max(x1,q[0]); y1=Math.max(y1,q[1]); }
+  for (const g of gs){ const [a,b,c,d] = mainBB(g.r); if (c-a > 180) continue; const p=merc(a,b), q=merc(c,d); x0=Math.min(x0,p[0]); y0=Math.min(y0,p[1]); x1=Math.max(x1,q[0]); y1=Math.max(y1,q[1]); }
   if (!isFinite(x0)){ x0=-170; x1=190; y0=-60; y1=80; }
   const s = Math.min((W-2*pad)/Math.max(x1-x0,.05), (MH-2*pad)/Math.max(y1-y0,.05));
   const cx=(x0+x1)/2, cy=(y0+y1)/2;
   const P = (lng,lat) => { const m = merc(lng,lat); return [W/2 + (m[0]-cx)*s, MH/2 - (m[1]-cy)*s]; };
   const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
-  const path = polys => { g.beginPath(); for (const poly of polys) for (const ring of poly){ ring.forEach((pt,i)=>{ const q=P(pt[0],pt[1]); i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]); }); g.closePath(); } };
-  g.fillStyle = css('--sea'); g.fillRect(0,0,W,MH);
+  const path = (polys, minPx) => { g.beginPath(); for (const poly of polys) for (const ring of poly){ const pts = ring.map(pt => P(pt[0],pt[1])); if (minPx){ let a=Infinity,b=Infinity,cc=-Infinity,d=-Infinity; for (const q of pts){ if(q[0]<a)a=q[0]; if(q[0]>cc)cc=q[0]; if(q[1]<b)b=q[1]; if(q[1]>d)d=q[1]; } if (cc-a < minPx && d-b < minPx) continue; } pts.forEach((q,i)=> i ? g.lineTo(q[0],q[1]) : g.moveTo(q[0],q[1])); g.closePath(); } };
+  const cover = (im, x, y, w, h) => { const k = Math.max(w/im.width, h/im.height); g.drawImage(im, x+(w-im.width*k)/2, y+(h-im.height*k)/2, im.width*k, im.height*k); };
+  const imgCache = new Map(); const img = async src => { if (!imgCache.has(src)) imgCache.set(src, loadImg(src).catch(() => null)); return imgCache.get(src); };
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); };
+  // map
+  g.save(); g.beginPath(); g.rect(0,0,W,MH); g.clip();
+  g.fillStyle = C('--sea'); g.fillRect(0,0,W,MH);
   const inView = r => { const b=r.bbox; const a=P(b[0],b[3]), z=P(b[2],b[1]); return !(z[0]<-50||a[0]>W+50||z[1]<-50||a[1]>MH+50); };
-  const lands = [...COUNTRIES];
-  g.fillStyle = css('--land'); g.strokeStyle = css('--coast'); g.lineWidth = 1;
-  for (const r of lands){ if (!inView(r)) continue; path(r.polys); g.fill('evenodd'); g.stroke(); }
-  const zoomLvl = level; if (zoomLvl >= 1){ g.strokeStyle = css('--border'); g.setLineDash([4,3]); g.lineWidth = .8; for (const r of R.values()){ if (r.level !== Math.min(zoomLvl,2) || !r.polys || !inView(r)) continue; path(r.polys); g.stroke(); } g.setLineDash([]); }
-  for (const gr of gs){
+  g.fillStyle = C('--land'); g.strokeStyle = C('--coast'); g.lineWidth = 1;
+  for (const r of COUNTRIES){ if (!inView(r)) continue; path(r.polys); g.fill('evenodd'); path(r.polys, 3); g.stroke(); }
+  if (SL >= 1){ g.strokeStyle = C('--border'); g.setLineDash([4,3]); g.lineWidth = .8; for (const r of R.values()){ if (r.level !== SL || !r.polys || !inView(r)) continue; path(r.polys, 6); g.stroke(); } g.setLineDash([]); }
+  for (const gr of [...gs].sort((a,b) => a.r.level - b.r.level)){
     const rep = repOf(gr); path(gr.r.polys); g.save(); g.clip('evenodd');
-    const b = gr.r.bbox; const a = P(b[0],b[3]), z = P(b[2],b[1]); const bw = z[0]-a[0], bh = z[1]-a[1];
-    if (rep){ try { const im = await loadImg(rep.thumb); const k = Math.max(bw/im.width, bh/im.height); g.drawImage(im, a[0]+(bw-im.width*k)/2, a[1]+(bh-im.height*k)/2, im.width*k, im.height*k); } catch(e){ g.fillStyle = css('--edge'); g.fill(); } }
-    else { g.fillStyle = css('--edge'); g.globalAlpha = .4; g.fillRect(a[0],a[1],bw,bh); g.globalAlpha = 1; }
-    g.restore(); path(gr.r.polys); g.strokeStyle = css('--ink'); g.lineWidth = 2; g.stroke();
+    const b = gr.r.bbox; const a = P(b[0],b[3]), z = P(b[2],b[1]);
+    const im = rep ? await img(rep.thumb) : null;
+    if (im) cover(im, a[0], a[1], z[0]-a[0], z[1]-a[1]); else { g.fillStyle = C('--edge'); g.globalAlpha = .45; g.fillRect(a[0],a[1],z[0]-a[0],z[1]-a[1]); g.globalAlpha = 1; }
+    g.restore(); path(gr.r.polys, 8); g.strokeStyle = C('--ink'); g.lineWidth = 1.6; g.stroke();
   }
-  g.fillStyle = css('--surface'); g.fillRect(0, MH, W, H-MH);
-  const all = [...photos.values()].filter(regionOf); const cs = new Set(), k2 = new Set(); for (const p of all){ const ch = chainOf(regionOf(p)); cs.add(ch[0].id); if (ch[2]) k2.add(ch[2].id); }
-  g.fillStyle = css('--ink'); g.font = `700 46px ${css('--sans')}`; g.fillText('사진 지도', 70, MH+90);
-  g.fillStyle = css('--muted'); g.font = `28px ${css('--sans')}`;
-  g.fillText(`나라 ${cs.size}곳 · 한국 시·군·구 ${k2.size}곳 · 사진 ${all.length}장`, 70, MH+145);
-  g.fillStyle = css('--grease'); g.fillRect(W-70-120, MH+62, 120, 8);
+  // name pins on map
+  const boxes = [];
+  for (const gr of [...gs].sort((a,b) => b.list.length - a.list.length)){
+    const [px, py] = P(gr.r.lng, gr.r.lat); if (px < 0 || px > W || py < 0 || py > MH) continue;
+    const name = gr.r.id.startsWith('KR1-') ? shortName(gr.r) : gr.r.name, cnt = String(gr.list.length);
+    g.font = `600 21px ${FONT}`; const tw = g.measureText(name).width; g.font = `700 17px ${FONT}`; const bw = Math.max(26, g.measureText(cnt).width + 16);
+    const w = 14 + tw + 8 + bw + 5, h = 34; const mb = mainBB(gr.r); const tA = P(mb[0], mb[3]), tB = P(mb[2], mb[1]); const small = (tB[0]-tA[0]) < w + 20 || (tB[1]-tA[1]) < 90;
+    const x = Math.max(4, Math.min(W-w-4, px - w/2)), y = Math.max(4, Math.min(MH-h-4, small ? Math.min(py, tA[1]) - h - 12 : py - h/2));
+    if (boxes.some(q => !(x+w < q[0] || x > q[2] || y+h < q[1] || y > q[3]))) continue; boxes.push([x-3, y-3, x+w+3, y+h+3]);
+    if (small){ g.strokeStyle = C('--ink'); g.lineWidth = 1.5; g.beginPath(); g.moveTo(Math.max(x+12, Math.min(x+w-12, px)), y+h); g.lineTo(px, py); g.stroke(); g.fillStyle = C('--ink'); g.beginPath(); g.arc(px, py, 3, 0, 7); g.fill(); }
+    g.save(); g.shadowColor = 'rgba(0,0,0,.28)'; g.shadowBlur = 6; g.shadowOffsetY = 1; g.fillStyle = C('--surface'); rr(x, y, w, h, h/2); g.fill(); g.restore();
+    g.fillStyle = C('--ink'); g.font = `600 21px ${FONT}`; g.textBaseline = 'middle'; g.fillText(name, x+14, y+h/2+1);
+    g.fillStyle = C('--grease'); rr(x+14+tw+8, y+5, bw, h-10, (h-10)/2); g.fill();
+    g.fillStyle = '#fff'; g.font = `700 17px ${FONT}`; g.textAlign = 'center'; g.fillText(cnt, x+14+tw+8+bw/2, y+h/2+1); g.textAlign = 'left';
+  }
+  g.restore();
+  // footer: title, stats, codex
+  const st = visitStats(); const all = [...photos.values()].filter(regionOf);
+  const visitedC = COUNTRIES.filter(r => st.has(r.id)).sort((a,b) => st.get(b.id).n - st.get(a.id).n);
+  const k1 = KR1S.filter(r => st.has(r.id)).length, k2 = [...st.keys()].filter(id => id.startsWith('KR2-')).length;
+  g.fillStyle = C('--surface'); g.fillRect(0, MH, W, H-MH);
+  g.fillStyle = C('--line'); g.fillRect(0, MH, W, 1);
+  g.textBaseline = 'alphabetic';
+  g.fillStyle = C('--ink'); g.font = `700 40px ${FONT}`; g.fillText('사진 지도', 60, MH+66);
+  g.fillStyle = C('--muted'); g.font = `24px ${FONT}`; g.fillText(`사진 ${all.length}장 · 나라 ${visitedC.length}곳 · 한국 시·군·구 ${k2}/${TOTAL_KR2}곳`, 60, MH+104);
+  g.fillStyle = C('--grease'); g.fillRect(W-60-110, MH+50, 110, 7);
+  const COLS = 8, cw = (W-120)/COLS, ch = 112;
+  const tile = async (r, x, y) => {
+    const sv = st.get(r.id), p2 = new Path2D(silhouette(r)), k = .64, ox = x + cw/2 - 32, oy = y;
+    g.save(); g.translate(ox, oy); g.scale(k, k);
+    if (sv){ const im = sv.rep ? await img(sv.rep.thumb) : null; g.save(); g.clip(p2, 'evenodd'); if (im) cover(im, 0, 0, 100, 100); else { g.fillStyle = C('--edge'); g.globalAlpha = .55; g.fillRect(0,0,100,100); g.globalAlpha = 1; } g.restore(); g.strokeStyle = C('--ink'); g.lineWidth = 1.4/k; g.stroke(p2); }
+    else { g.fillStyle = C('--bg'); g.fill(p2, 'evenodd'); g.strokeStyle = C('--border'); g.lineWidth = 1.2/k; g.setLineDash([3/k, 2/k]); g.stroke(p2); g.setLineDash([]); }
+    g.restore();
+    const name = r.id.startsWith('KR1-') ? shortName(r) : r.name;
+    g.textAlign = 'center'; g.fillStyle = sv ? C('--ink') : C('--muted'); g.font = `${sv ? 600 : 400} 17px ${FONT}`;
+    let nm = name; while (g.measureText(nm).width > cw-8 && nm.length > 2) nm = nm.slice(0,-1); if (nm !== name) nm += '…';
+    g.fillText(nm, x + cw/2, y + 86);
+    if (sv){ g.fillStyle = C('--grease'); g.font = `600 16px ${EDGE}`; g.fillText(`${sv.n}`, x + cw/2, y + 106); }
+    g.textAlign = 'left';
+  };
+  const label = (text, num, y) => { g.font = `600 20px ${FONT}`; g.fillStyle = C('--ink'); g.fillText(text, 60, y); const w = g.measureText(text + ' ').width; g.fillStyle = C('--grease'); g.font = `600 22px ${EDGE}`; g.fillText(num, 60 + w, y); };
+  let y = MH + 152;
+  label('한국 시·도', `${k1}/${KR1S.length}`, y); y += 16;
+  for (let i = 0; i < KR1S.length; i++) await tile(KR1S[i], 60 + (i % COLS)*cw, y + Math.floor(i/COLS)*ch);
+  y += Math.ceil(KR1S.length/COLS)*ch + 30;
+  label('나라', `${visitedC.length}곳`, y); y += 16;
+  const shown = visitedC.length > COLS ? visitedC.slice(0, COLS-1) : visitedC;
+  for (let i = 0; i < shown.length; i++) await tile(shown[i], 60 + i*cw, y);
+  if (visitedC.length > COLS){ g.textAlign = 'center'; g.fillStyle = C('--muted'); g.font = `600 22px ${FONT}`; g.fillText(`+${visitedC.length - shown.length}`, 60 + (COLS-1)*cw + cw/2, y + 44); g.textAlign = 'left'; }
+  if (!visitedC.length){ g.fillStyle = C('--muted'); g.font = `18px ${FONT}`; g.fillText('아직 없어요', 60, y + 40); }
   c.toBlob(b => b && offerFile('photo-map.png', b), 'image/png');
 };
 
