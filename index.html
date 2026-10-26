@@ -1413,11 +1413,23 @@ let toastTimer = 0;
 function toast(msg, undo){ $('#toastText').textContent = msg; const u = $('#toastUndo'); u.classList.toggle('hide', !undo); u.onclick = () => { $('#toast').hidden = true; undo && undo(); }; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(()=> $('#toast').hidden = true, undo ? 8000 : 4000); }
 
 /* ---------- downloads, backup ---------- */
+const inApp = /KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\/|; wv\)/i.test(navigator.userAgent);
+function showImageSheet(blob){
+  const fr = new FileReader();
+  fr.onload = () => {
+    let el = document.getElementById('imgSheet');
+    if (!el){ el = document.createElement('div'); el.id = 'imgSheet'; el.className = 'light'; el.setAttribute('role','dialog'); el.setAttribute('aria-modal','true'); el.setAttribute('aria-label','지도 이미지'); document.body.appendChild(el); }
+    el.innerHTML = `<div class="stage" style="padding:12px"><img alt="사진 지도 이미지" src="${fr.result}"></div><div class="cap"><span>이미지를 길게 눌러 ‘이미지 저장’을 고르세요. 저장 메뉴가 없으면 이 화면을 칡처해도 돼요.</span><span class="sp"></span><button type="button" data-close>닫기</button></div>`;
+    el.hidden = false; const c = el.querySelector('[data-close]'); c.onclick = () => { el.hidden = true; }; c.focus();
+  };
+  fr.readAsDataURL(blob);
+}
 async function offerFile(filename, data){
   let dl = null; try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch(e){}
   if (dl){ try { await dl.save({filename, data}); return true; } catch(err){ if (err && err.code === 'declined') return false; toast('파일을 저장하지 못했어요. 잠시 뒤 다시 해 보세요.'); return false; } }
   const type = /\.png$/i.test(filename) ? 'image/png' : 'application/json';
   const blob = data instanceof Blob ? (data.type ? data : new Blob([data], {type})) : new Blob([data], {type});
+  if (inApp && /\.png$/i.test(filename)){ showImageSheet(blob); return true; }
   if (isMobile && navigator.canShare){
     try { const f = new File([blob], filename, {type: blob.type}); if (navigator.canShare({files:[f]})){ await navigator.share({files:[f], title:'사진 지도'}); return true; } }
     catch(err){ if (err && err.name === 'AbortError') return false; }
