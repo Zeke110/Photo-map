@@ -799,6 +799,32 @@ h3{font-size:14px;margin:22px 0 8px;color:var(--muted);font-weight:600}
 .dropcover{position:fixed;inset:0;z-index:1300;background:rgba(194,40,42,.12);border:3px dashed var(--grease);display:grid;place-items:center;font-size:20px;font-weight:600;pointer-events:none}
 .dropcover[hidden]{display:none}
 .hide{display:none!important}
+.tally button{display:flex;flex-direction:column;align-items:flex-start;background:none;border:0;padding:4px 6px;margin:-4px -6px;border-radius:6px;cursor:pointer;text-align:left;color:inherit}
+.tally button:hover{background:var(--bg)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin:14px 0 10px;overflow-x:auto}
+.tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:8px 10px;cursor:pointer;color:var(--muted);font-weight:600;white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--grease)}
+.cxprog{display:flex;align-items:baseline;gap:10px;margin:2px 0}
+.cxprog b{font:600 30px/1 var(--edgefont);letter-spacing:.01em}
+.cxgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(102px,1fr));gap:8px;margin:8px 0 14px}
+.cx{display:flex;flex-direction:column;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 6px 8px;cursor:pointer;text-align:center;min-width:0}
+.cx:hover{border-color:var(--border)}
+.cx.on{border-color:var(--ink)}
+.cx svg{width:74px;height:74px;display:block;overflow:visible}
+.cx-empty{fill:var(--bg);stroke:var(--border);stroke-width:1.2;stroke-dasharray:3 2;vector-effect:non-scaling-stroke}
+.cx-line{fill:none;stroke:var(--ink);stroke-width:1.3;vector-effect:non-scaling-stroke}
+.cx-fill{fill:var(--edge);fill-opacity:.55;stroke:var(--ink);stroke-width:1.3;vector-effect:non-scaling-stroke}
+.cx-n{font-size:13px;font-weight:600;line-height:1.3;max-width:100%;overflow-wrap:anywhere}
+.cx:not(.on) .cx-n{color:var(--muted);font-weight:500}
+.cx-m{font:600 12px/1.2 var(--edgefont);letter-spacing:.04em;color:var(--grease)}
+.cx:not(.on) .cx-m{color:var(--muted);font:11.5px/1.2 var(--sans);letter-spacing:0}
+details.sec{border-bottom:1px solid var(--line)}
+details.sec summary{display:flex;justify-content:space-between;align-items:center;padding:11px 2px;cursor:pointer;list-style:none;font-weight:600}
+details.sec summary::-webkit-details-marker{display:none}
+details.sec summary::after{content:"›";color:var(--muted);margin-left:8px;transition:transform .15s}
+details.sec[open] summary::after{transform:rotate(90deg)}
+details.sec summary .n{margin-left:auto;color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
+details.sec summary .n b{color:var(--grease);font-weight:700}
 @media (max-width:760px){
   .app{grid-template-columns:1fr;grid-template-rows:55vh 1fr;height:auto;min-height:100%}
   .mapwrap{grid-row:1;position:sticky;top:0;z-index:5;height:55vh}
@@ -1046,6 +1072,7 @@ async function makeThumb(p){
   } catch(e){ p.noPreview = true; thumbFails++; }
   document.querySelectorAll(`[data-key="${CSS.escape(p.key)}"] .pic`).forEach(fillPic);
   if (repKeys.has(p.key)) scheduleMap();
+  if (view.type === 'codex' && codexKeys.has(p.key)){ clearTimeout(codexTimer); codexTimer = setTimeout(() => { if (view.type !== 'codex') return; const sc = pbody.scrollTop, wy = scrollY; renderPanel(); pbody.scrollTop = sc; if (innerWidth <= 760) scrollTo(0, wy); }, 300); }
 }
 const io = new IntersectionObserver(es => { for (const e of es) if (e.isIntersecting){ io.unobserve(e.target); wantThumb(photos.get(e.target.closest('[data-key]').dataset.key), true); } }, {rootMargin:'200px'});
 function fillPic(pic){
@@ -1217,6 +1244,81 @@ function fitAll(){
 /* ---------- panel ---------- */
 const pbody = $('#pbody');
 function setView(v, keepScroll){ const sc = pbody.scrollTop; view = v; if (!keepScroll){ selectMode=false; selected.clear(); lastClicked=null; } showLimit = 240; renderPanel(); if (keepScroll) pbody.scrollTop = sc; else pbody.scrollTop = 0; drawOutline(); }
+/* ---------- codex ---------- */
+const CONT = {"아시아":["IDN","MYS","CYP","IND","CHN","ISR","PSX","LBN","SYR","PRK","BTN","ARE","OMN","UZB","KAZ","TJK","MNG","VNM","KHM","GEO","AZE","TUR","LAO","KGZ","ARM","IRQ","IRN","QAT","SAU","PAK","THA","KWT","TLS","BRN","MMR","BGD","AFG","TKM","JOR","NPL","YEM","HKG","CYN","KAS","PHL","LKA","TWN","JPN","IOA","SGP","BHR","MAC","KOR","KAB","PGA"],"유럽":["FRA","UKR","BLR","LTU","RUS","CZE","DEU","EST","LVA","NOR","SWE","FIN","LUX","BEL","MKD","ALB","KOS","ESP","DNK","ROU","HUN","SVK","POL","IRL","GBR","GRC","AUT","ITA","CHE","NLD","LIE","SRB","HRV","SVN","BGR","SMR","MCO","AND","MNE","BIH","PRT","MDA","ISL","MLT","JEY","GGY","IMN","ALD","FRO","ESB","WSB","GIB"],"북아메리카":["CRI","NIC","MAF","SXM","HTI","DOM","SLV","GTM","CUB","HND","USA","CAN","MEX","BLZ","PAN","CUW","ABW","BHS","TCA","SPM","GRL","TTO","GRD","VCT","BRB","LCA","DMA","MSR","ATG","KNA","VIR","BLM","PRI","AIA","VGB","JAM","CYM","BMU","USG","CLP"],"남아메리카":["ARG","URY","CHL","BOL","PER","SUR","GUY","BRA","ECU","COL","PRY","VEN","FLK"],"아프리카":["ETH","SDS","SOM","KEN","MWI","TZA","SOL","MAR","SAH","COG","COD","NAM","ZAF","LBY","TUN","ZMB","SLE","GIN","LBR","CAF","SDN","DJI","ERI","CIV","MLI","SEN","NGA","BEN","AGO","BWA","ZWE","TCD","DZA","MOZ","SWZ","BDI","RWA","UGA","LSO","CMR","GAB","NER","BFA","TGO","GHA","GNB","EGY","MRT","GNQ","GMB","MDG","COM","STP","CPV"],"오세아니아":["PNG","NZL","NCL","AUS","PCN","PYF","KIR","MHL","NFK","COK","FJI","TON","WLF","WSM","SLB","TUV","NRU","FSM","VUT","NIU","ASM","PLW","GUM","MNP","ATC","UMI","CSI"],"대양의 섬":["ATF","SYC","HMD","SHN","MUS","IOT","MDV","SGS"]};
+const CONT_OF = {}; for (const [k, a] of Object.entries(CONT)) for (const x of a) CONT_OF['C-'+x] = k;
+const KR1S = (() => { const order = ['11','26','27','28','30','31','36','41','51','43','44','52','12','47','48','50']; const a = order.map(c => R.get('KR1-'+c)).filter(r => r && r.polys); for (const r of KR1) if (r.polys && !a.includes(r)) a.push(r); return a; })();
+const TAB_NAMES = {sido:'한국 시·도', sgg:'한국 시·군·구', country:'나라'};
+const codexKeys = new Set(); let codexTimer = 0, cxSeq = 0, cxStats = null;
+function visitStats(){
+  const m = new Map();
+  for (const p of photos.values()){
+    const id = regionOf(p); if (!id) continue;
+    for (const r of chainOf(id)){
+      let s = m.get(r.id); if (!s) m.set(r.id, s = {n:0, first:0, rep:null, cand:null});
+      s.n++; if (p.takenAt && (!s.first || p.takenAt < s.first)) s.first = p.takenAt;
+      if (p.thumb){ if (!s.rep || (p.takenAt||0) > (s.rep.takenAt||0)) s.rep = p; } else if (p.file && !p.noPreview && !s.cand) s.cand = p;
+    }
+  }
+  return m;
+}
+function silhouette(r){
+  if (r._sil) return r._sil;
+  const wrap = r.bbox[2] - r.bbox[0] > 180;
+  const polys = r.polys.map(p => {
+    const ring = wrap ? p[0].map(([x,y]) => [x < 0 ? x+360 : x, y]) : p[0];
+    let a=Infinity, b=Infinity, c=-Infinity, d=-Infinity, ar=0;
+    for (let i=0, j=ring.length-1; i<ring.length; j=i++){ const x=ring[i][0], y=ring[i][1]; if(x<a)a=x; if(x>c)c=x; if(y<b)b=y; if(y>d)d=y; ar += (ring[j][0]+x)*(ring[j][1]-y); }
+    return {ring, bb:[a,b,c,d], cx:(a+c)/2, cy:(b+d)/2, area: Math.abs(ar/2)*Math.cos((b+d)/2*Math.PI/180)};
+  });
+  const main = polys.reduce((m, p) => p.area > m.area ? p : m, polys[0]);
+  const lim = Math.max(r.level === 0 ? 15 : 0, 1.5*Math.hypot(main.bb[2]-main.bb[0], main.bb[3]-main.bb[1]));
+  const keep = polys.filter(p => Math.hypot(p.cx-main.cx, p.cy-main.cy) <= lim);
+  const my = y => -Math.log(Math.tan(Math.PI/4 + Math.max(-85, Math.min(85, y))*Math.PI/360))*180/Math.PI;
+  let x0=Infinity, y0=Infinity, x1=-Infinity, y1=-Infinity;
+  const pts = keep.map(p => p.ring.map(([x,y]) => { const Y = my(y); if(x<x0)x0=x; if(x>x1)x1=x; if(Y<y0)y0=Y; if(Y>y1)y1=Y; return [x,Y]; }));
+  const s = 90/Math.max(x1-x0, y1-y0, 1e-9), ox = (100-(x1-x0)*s)/2, oy = (100-(y1-y0)*s)/2;
+  let d = '';
+  for (const ring of pts){ let seg='', n=0, lx=0, ly=0; for (const [x,y] of ring){ const X = ox+(x-x0)*s, Y = oy+(y-y0)*s; if (n && Math.abs(X-lx) < .7 && Math.abs(Y-ly) < .7) continue; seg += (n ? 'L' : 'M') + X.toFixed(1) + ' ' + Y.toFixed(1); lx=X; ly=Y; n++; } if (n >= 3) d += seg + 'Z'; }
+  return r._sil = d || 'M45 45h10v10h-10Z';
+}
+function cxCard(r){
+  const s = cxStats.get(r.id), d = silhouette(r), id = 'cx' + (cxSeq++);
+  let inner;
+  if (s && s.rep) inner = `<clipPath id="${id}"><path d="${d}"/></clipPath><image href="${s.rep.thumb}" x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid slice" clip-path="url(#${id})"/><path class="cx-line" d="${d}"/>`;
+  else if (s){ inner = `<path class="cx-fill" d="${d}"/>`; if (s.cand){ codexKeys.add(s.cand.key); wantThumb(s.cand, false); } }
+  else inner = `<path class="cx-empty" d="${d}"/>`;
+  const nm = r.id.startsWith('KR1-') ? shortName(r) : r.name;
+  const meta = s ? `${s.n}장${s.first ? ' · ' + fmtDate(s.first) : ''}` : '아직 없어요';
+  return `<button type="button" class="cx${s ? ' on' : ''}" data-cx="${r.id}" title="${esc(r.name)}" aria-label="${esc(r.name)}, ${s ? `사진 ${s.n}장` : '아직 사진 없음'}"><svg viewBox="0 0 100 100" aria-hidden="true">${inner}</svg><span class="cx-n">${esc(nm)}</span><span class="cx-m">${meta}</span></button>`;
+}
+const byVisit = (a, b) => (cxStats.has(b.id) - cxStats.has(a.id)) || a.name.localeCompare(b.name, 'ko');
+function secList(key){
+  if (key.startsWith('kr1:')) return (R.get(key.slice(4))?.children || []).filter(r => r.polys).sort(byVisit);
+  if (key.startsWith('ct:')) return COUNTRIES.filter(r => (CONT_OF[r.id] || '대양의 섬') === key.slice(3)).sort(byVisit);
+  return [];
+}
+function fillSec(d){ if (view.open) view.open.add(d.dataset.sec); const g = d.querySelector('.cxgrid'); if (g && !g.childElementCount){ cxStats = cxStats || visitStats(); g.innerHTML = secList(d.dataset.sec).map(cxCard).join(''); } }
+function codexHTML(){
+  cxStats = visitStats(); cxSeq = 0; codexKeys.clear();
+  const tab = TAB_NAMES[view.tab] ? view.tab : 'sido';
+  const tabs = `<div class="tabs" role="tablist">${Object.entries(TAB_NAMES).map(([k, v]) => `<button type="button" role="tab" aria-selected="${k === tab}" data-codex="${k}">${v}</button>`).join('')}</div>`;
+  let got = 0, total = 0, body = '';
+  if (tab === 'sido'){
+    got = KR1S.filter(r => cxStats.has(r.id)).length; total = KR1S.length;
+    body = `<div class="cxgrid">${KR1S.map(cxCard).join('')}</div>`;
+  } else {
+    const groups = tab === 'sgg' ? KR1S.map(r => ['kr1:' + r.id, r.name]) : Object.keys(CONT).map(k => ['ct:' + k, k]);
+    if (!view.open) view.open = new Set(groups.filter(([k]) => secList(k).some(r => cxStats.has(r.id))).map(([k]) => k));
+    for (const [k, t] of groups){
+      const list = secList(k), n = list.filter(r => cxStats.has(r.id)).length, open = view.open.has(k);
+      got += n; total += list.length;
+      body += `<details class="sec" data-sec="${esc(k)}"${open ? ' open' : ''}><summary><span>${esc(t)}</span><span class="n"><b>${n}</b> / ${list.length}</span></summary><div class="cxgrid">${open ? list.map(cxCard).join('') : ''}</div></details>`;
+    }
+  }
+  const pct = total ? Math.round(100*got/total) : 0;
+  return `<button class="btn link" data-act="home">‹ 전체로 돌아가기</button><h2>지역 도감</h2><p class="muted small">사진을 남긴 곳은 사진으로 채워지고, 아직 못 간 곳은 빈 윤곽으로 남아요.</p>${tabs}<div class="cxprog"><b>${got}/${total}</b><span class="muted">${TAB_NAMES[tab]} 모았어요 · ${pct}%</span></div><div class="progress"><div style="width:${pct}%"></div></div>${body}`;
+}
 function fmtDate(t){ const d=new Date(t); return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`; }
 function range(list){ const ts = list.map(p=>p.takenAt).filter(Boolean); if (!ts.length) return '날짜 없음'; const a=Math.min(...ts), b=Math.max(...ts); return fmtDate(a)===fmtDate(b) ? fmtDate(a) : `${fmtDate(a)} – ${fmtDate(b)}`; }
 function renderPanel(){
@@ -1231,6 +1333,8 @@ function renderPanel(){
     <p class="muted small">JPG와 HEIC를 읽어요. HEIC 미리보기는 사파리에서만 보여요.</p>`;
   } else if (view.type === 'region' && R.has(view.id)){
     h = regionHTML(R.get(view.id), all);
+  } else if (view.type === 'codex'){
+    h = codexHTML();
   } else if (view.type === 'unknown'){
     const list = photosSorted(all.filter(p=>!regionOf(p)));
     h = `<button class="btn link" data-act="home">‹ 전체로 돌아가기</button><h2>지역 없는 사진</h2><p class="muted">사진 ${list.length}장. 고른 뒤 ‘지역 지정’을 누르세요.</p>${selectTools(list)}${sheet(list)}`;
@@ -1240,7 +1344,8 @@ function renderPanel(){
     const cs = new Map(), k1 = new Set(), k2 = new Set();
     for (const p of located){ const ch = chainOf(regionOf(p)); const c = ch[0]; cs.set(c.id, (cs.get(c.id)||0)+1); if (ch[1] && ch[1].id.startsWith('KR1-')) k1.add(ch[1].id); if (ch[2]) k2.add(ch[2].id); }
     h = `<p class="stat">사진 ${all.length}장 중 ${located.length}장의 지역을 알아요.</p>
-    <div class="tally"><div><b>${cs.size}</b><span>나라</span></div><div><b>${k1.size}/${KR1.length}</b><span>한국 시·도</span></div><div><b>${k2.size}/${TOTAL_KR2}</b><span>한국 시·군·구</span></div></div>
+    <div class="tally"><button type="button" data-codex="country"><b>${cs.size}</b><span>나라</span></button><button type="button" data-codex="sido"><b>${k1.size}/${KR1.length}</b><span>한국 시·도</span></button><button type="button" data-codex="sgg"><b>${k2.size}/${TOTAL_KR2}</b><span>한국 시·군·구</span></button></div>
+    <p><button class="btn sub" data-codex="sido">지역 도감 보기</button></p>
     ${mobileHint ? `<p class="note">고른 사진 대부분에 위치가 없어요. 휴대폰 브라우저가 위치를 빼고 넘겨줬을 수 있어요. 아이폰은 사진 선택 화면의 ‘옵션’에서 위치를 켜고 다시 골라 주세요.</p>` : ''}
     ${unknown ? `<p><button class="btn sub" data-act="unknown">지역 없는 사진 ${unknown}장에 지역 넣기</button></p>` : ''}
     <h3>나라별</h3><ul class="list">${[...cs].sort((a,b)=>b[1]-a[1]).map(([id,n])=>`<li><button data-region="${id}"><span>${esc(R.get(id).name)}</span><span class="n">${n}장</span></button></li>`).join('')}</ul>
@@ -1251,6 +1356,7 @@ function renderPanel(){
     <p class="muted small">지도 경계: Natural Earth(퍼블릭 도메인), 한국 행정구역은 통계청 SGIS 행정동 경계를 가공한 vuski/admdongkor 2026년 10월판(CC BY 4.0). 아주 작은 나라는 지도에서 빠질 수 있어요.</p>`;
   }
   pbody.innerHTML = h;
+  pbody.querySelectorAll('details[data-sec]').forEach(d => d.addEventListener('toggle', () => { if (d.open) fillSec(d); else if (view.open) view.open.delete(d.dataset.sec); }));
   pbody.querySelectorAll('.pic').forEach(fillPic);
   updateBar();
 }
@@ -1292,6 +1398,8 @@ function sheet(list){
 pbody.addEventListener('click', e => {
   const t = e.target.closest('button,[data-key]'); if (!t) return;
   if (t.dataset.region){ openRegion(t.dataset.region, true); return; }
+  if (t.dataset.codex){ setView({type:'codex', tab:t.dataset.codex}); return; }
+  if (t.dataset.cx){ const r = R.get(t.dataset.cx); if (!r) return; if (t.classList.contains('on')) openRegion(r.id, true); else { flyTo(r); toast(`‘${r.name}’에는 아직 사진이 없어요.`); } return; }
   const act = t.dataset.act;
   if (act === 'home') return setView({type:'overview'});
   if (act === 'unknown'){ setView({type:'unknown'}); selectMode = true; renderPanel(); return; }
