@@ -746,6 +746,7 @@ h3{font-size:14px;margin:22px 0 8px;color:var(--muted);font-weight:600}
 .frame[aria-pressed="true"] img{filter:brightness(.7)}
 .frame .flag{position:absolute;left:4px;bottom:4px;background:rgba(0,0,0,.6);color:var(--edge);font:600 10px/1 var(--edgefont);padding:2px 4px;border-radius:2px;letter-spacing:.05em}
 .more{margin:14px 0}
+.frame .flag.cover{top:4px;bottom:auto;background:var(--grease);color:#fff}
 .bar{position:absolute;left:0;right:0;bottom:0;padding:10px 20px calc(10px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--line);display:flex;gap:8px;align-items:center}
 .bar[hidden]{display:none}
 .bar .count{flex:1;font-weight:600}
@@ -1128,6 +1129,12 @@ function groupAt(lvl){
   for (const p of photos.values()){ const id = regionOf(p); if (!id) continue; const ch = chainOf(id); const r = ch[Math.min(lvl, ch.length-1)]; let g = m.get(r.id); if (!g) m.set(r.id, g = {r, list:[]}); g.list.push(p); }
   return [...m.values()].sort((a,b)=> a.r.level-b.r.level);
 }
+let coverPick = false;
+const mercY = y => Math.log(Math.tan(Math.PI/4 + Math.max(-85, Math.min(85, y))*Math.PI/360))*180/Math.PI;
+function collageOf(g, max){ const list = photosSorted([...g.list]); const out = []; const cv = g.r.cover && photos.get(g.r.cover); if (cv && list.includes(cv)) out.push(cv); const rest = list.filter(p => p !== cv && !p.noPreview && (p.thumb || p.file)); const need = Math.min(max - out.length, rest.length); for (let i = 0; i < need; i++) out.push(rest[Math.floor((i + .5) * rest.length / need)]); return out; }
+function gridCells(n, A, W, H){ const cols = Math.max(1, Math.min(n, Math.round(Math.sqrt(n * A)))); const rows = Math.ceil(n / cols); const cells = []; for (let r = 0; r < rows; r++){ const inRow = r === rows - 1 ? n - cols*(rows-1) : cols; for (let c = 0; c < inRow; c++) cells.push([c*W/inRow, r*H/rows, W/inRow, H/rows]); } return cells; }
+function saveCovers(){ const o = {}; for (const r of R.values()) if (r.cover) o[r.id] = r.cover; store.setMeta('covers', o); }
+function setCover(id, key){ const r = R.get(id); if (!r) return; const prev = r.cover || null; r.cover = key || null; coverPick = false; saveCovers(); const p = key && photos.get(key); if (p && !p.thumb) wantThumb(p, true); drawPhotos(); const sc = pbody.scrollTop; renderPanel(); pbody.scrollTop = sc; toast(key ? `‘${r.name}’ 대표 사진을 바꿨어요.` : `‘${r.name}’ 대표 사진을 자동으로 되돌렸어요.`, () => { r.cover = prev; saveCovers(); drawPhotos(); const s2 = pbody.scrollTop; renderPanel(); pbody.scrollTop = s2; }); }
 function repOf(g){ const withThumb = g.list.filter(p=>p.thumb); if (g.r.cover && photos.get(g.r.cover)?.thumb) return photos.get(g.r.cover); if (withThumb.length) return withThumb.sort((a,b)=>(b.takenAt||0)-(a.takenAt||0))[0]; return null; }
 let mapTimer = 0;
 function scheduleMap(){ clearTimeout(mapTimer); mapTimer = setTimeout(drawPhotos, 120); }
@@ -1138,13 +1145,13 @@ function drawPhotos(){
   const ink = css('--ink'), edge = css('--edge');
   groups.forEach((g, i) => {
     if (!g.r.feature) return;
-    const rep = repOf(g); let fill = edge, fop = .4;
-    if (rep){
-      const pid = 'pt'+i;
-      pdefs.insertAdjacentHTML('beforeend', `<pattern id="${pid}" patternUnits="objectBoundingBox" width="1" height="1" viewBox="0 0 ${rep.tw} ${rep.th}" preserveAspectRatio="xMidYMid slice"><image width="${rep.tw}" height="${rep.th}" href="${rep.thumb}" xlink:href="${rep.thumb}"/></pattern>`);
+    const pics = collageOf(g, 10), ready = pics.filter(p => p.thumb); let fill = edge, fop = .4;
+    for (const p of pics) if (!p.thumb && p.file && !p.noPreview){ repKeys.add(p.key); wantThumb(p, false); }
+    if (ready.length){
+      const pid = 'pt'+i, b = g.r.bbox, A = Math.max(.25, Math.min(4, (b[2]-b[0]) / Math.max(1e-6, mercY(b[3]) - mercY(b[1])))), VW = 100*A, VH = 100;
+      const cells = gridCells(ready.length, A, VW, VH), f = v => v.toFixed(2);
+      pdefs.insertAdjacentHTML('beforeend', `<pattern id="${pid}" patternUnits="objectBoundingBox" width="1" height="1" viewBox="0 0 ${f(VW)} ${VH}" preserveAspectRatio="xMidYMid slice">${cells.map(([x,y,w,hh], k) => `<image x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(hh)}" preserveAspectRatio="xMidYMid slice" href="${ready[k].thumb}" xlink:href="${ready[k].thumb}"/>`).join('')}${ready.length > 1 ? cells.map(([x,y,w,hh]) => `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(hh)}" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join('') : ''}</pattern>`);
       fill = `url(#${pid})`; fop = 1;
-    } else {
-      for (const p of g.list.slice(0,4)){ repKeys.add(p.key); wantThumb(p, false); }
     }
     const lay = L.geoJSON(g.r.feature, {renderer:svgR, style:{color:ink, weight:1.3, fillColor:fill, fillOpacity:fop}, onEachFeature:(f,l)=>l.on('click', e => { L.DomEvent.stopPropagation(e); regionClick(g.r); })});
     photoLayer.addLayer(lay);
@@ -1243,7 +1250,7 @@ function fitAll(){
 
 /* ---------- panel ---------- */
 const pbody = $('#pbody');
-function setView(v, keepScroll){ const sc = pbody.scrollTop; view = v; if (!keepScroll){ selectMode=false; selected.clear(); lastClicked=null; } showLimit = 240; renderPanel(); if (keepScroll) pbody.scrollTop = sc; else pbody.scrollTop = 0; drawOutline(); }
+function setView(v, keepScroll){ const sc = pbody.scrollTop; view = v; if (!keepScroll){ selectMode=false; coverPick=false; selected.clear(); lastClicked=null; } showLimit = 240; renderPanel(); if (keepScroll) pbody.scrollTop = sc; else pbody.scrollTop = 0; drawOutline(); }
 /* ---------- codex ---------- */
 const CONT = {"아시아":["IDN","MYS","CYP","IND","CHN","ISR","PSX","LBN","SYR","PRK","BTN","ARE","OMN","UZB","KAZ","TJK","MNG","VNM","KHM","GEO","AZE","TUR","LAO","KGZ","ARM","IRQ","IRN","QAT","SAU","PAK","THA","KWT","TLS","BRN","MMR","BGD","AFG","TKM","JOR","NPL","YEM","HKG","CYN","KAS","PHL","LKA","TWN","JPN","IOA","SGP","BHR","MAC","KOR","KAB","PGA"],"유럽":["FRA","UKR","BLR","LTU","RUS","CZE","DEU","EST","LVA","NOR","SWE","FIN","LUX","BEL","MKD","ALB","KOS","ESP","DNK","ROU","HUN","SVK","POL","IRL","GBR","GRC","AUT","ITA","CHE","NLD","LIE","SRB","HRV","SVN","BGR","SMR","MCO","AND","MNE","BIH","PRT","MDA","ISL","MLT","JEY","GGY","IMN","ALD","FRO","ESB","WSB","GIB"],"북아메리카":["CRI","NIC","MAF","SXM","HTI","DOM","SLV","GTM","CUB","HND","USA","CAN","MEX","BLZ","PAN","CUW","ABW","BHS","TCA","SPM","GRL","TTO","GRD","VCT","BRB","LCA","DMA","MSR","ATG","KNA","VIR","BLM","PRI","AIA","VGB","JAM","CYM","BMU","USG","CLP"],"남아메리카":["ARG","URY","CHL","BOL","PER","SUR","GUY","BRA","ECU","COL","PRY","VEN","FLK"],"아프리카":["ETH","SDS","SOM","KEN","MWI","TZA","SOL","MAR","SAH","COG","COD","NAM","ZAF","LBY","TUN","ZMB","SLE","GIN","LBR","CAF","SDN","DJI","ERI","CIV","MLI","SEN","NGA","BEN","AGO","BWA","ZWE","TCD","DZA","MOZ","SWZ","BDI","RWA","UGA","LSO","CMR","GAB","NER","BFA","TGO","GHA","GNB","EGY","MRT","GNQ","GMB","MDG","COM","STP","CPV"],"오세아니아":["PNG","NZL","NCL","AUS","PCN","PYF","KIR","MHL","NFK","COK","FJI","TON","WLF","WSM","SLB","TUV","NRU","FSM","VUT","NIU","ASM","PLW","GUM","MNP","ATC","UMI","CSI"],"대양의 섬":["ATF","SYC","HMD","SHN","MUS","IOT","MDV","SGS"]};
 const CONT_OF = {}; for (const [k, a] of Object.entries(CONT)) for (const x of a) CONT_OF['C-'+x] = k;
@@ -1260,6 +1267,7 @@ function visitStats(){
       if (p.thumb){ if (!s.rep || (p.takenAt||0) > (s.rep.takenAt||0)) s.rep = p; } else if (p.file && !p.noPreview && !s.cand) s.cand = p;
     }
   }
+  for (const [id, s] of m){ const r = R.get(id), cv = r && r.cover && photos.get(r.cover); if (cv && cv.thumb) s.rep = cv; }
   return m;
 }
 function silhouette(r){
@@ -1373,7 +1381,10 @@ function regionHTML(r, all){
   ${shallow ? `<p class="muted small">${shallow}장은 ‘${esc(r.name)}’까지만 알아요. 골라서 더 작은 지역을 넣을 수 있어요.</p>` : ''}
   ${list.length ? selectTools(list) + sheet(list) : `<p class="muted">이 지역에 사진이 없어요.</p>`}`;
 }
-function selectTools(list){ return `<div class="row" style="margin-top:12px"><button class="btn sub" data-act="selmode" aria-pressed="${selectMode}">${selectMode ? '선택 끝내기' : '사진 선택'}</button>${selectMode ? `<span class="muted small">Shift를 누르고 누르면 범위로 골라요.</span>` : ''}</div>`; }
+function selectTools(list){
+  const r = view.type === 'region' ? R.get(view.id) : null, cover = r && r.cover && photos.get(r.cover);
+  return `<div class="row" style="margin-top:12px"><button class="btn sub" data-act="selmode" aria-pressed="${selectMode}">${selectMode ? '선택 끝내기' : '사진 선택'}</button>${r && !selectMode ? `<button class="btn sub" data-act="coverpick" aria-pressed="${coverPick}">${coverPick ? '고르기 취소' : '대표 사진 선택'}</button>` : ''}${selectMode ? `<span class="muted small">Shift를 누르고 누르면 범위로 골라요.</span>` : ''}</div>${coverPick ? `<p class="note">‘${esc(r.name)}’ 지도와 공유 이미지에 맨 먼저 보일 사진을 누르세요.</p>` : r && !selectMode ? `<p class="muted small" style="margin:6px 0 0">대표 사진: ${cover ? `${esc(cover.name)} · <button class="btn link small" data-act="coverreset">자동으로 되돌리기</button>` : '자동 (가장 최근 사진)'}</p>` : ''}`;
+}
 function monthKey(p){ if (!p.takenAt) return '날짜 없음'; const d=new Date(p.takenAt); return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}`; }
 let sheetList = [];
 function sheet(list){
@@ -1386,7 +1397,7 @@ function sheet(list){
     for (let i=0;i<arr.length;i+=3){
       h += '<div class="strip">' + arr.slice(i,i+3).map(p => {
         const n = list.indexOf(p)+1; const on = selected.has(p.key);
-        return `<div class="frame" data-key="${esc(p.key)}" role="button" tabindex="0" ${selectMode?`aria-pressed="${on}" aria-label="${esc(k)} ${n}번 사진 선택"`:`aria-label="${n}번 사진 크게 보기"`}><div class="pic"></div>${p.manual?'<span class="flag">직접</span>':''}${selectMode?'<button class="zoom" type="button" data-zoom aria-label="크게 보기">⤢</button>':''}<span class="no">${n}</span></div>`;
+        return `<div class="frame" data-key="${esc(p.key)}" role="button" tabindex="0" ${selectMode?`aria-pressed="${on}" aria-label="${esc(k)} ${n}번 사진 선택"`:`aria-label="${n}번 사진 크게 보기"`}><div class="pic"></div>${p.manual?'<span class="flag">직접</span>':''}${view.type==='region' && R.get(view.id)?.cover===p.key?'<span class="flag cover">대표</span>':''}${selectMode?'<button class="zoom" type="button" data-zoom aria-label="크게 보기">⤢</button>':''}<span class="no">${n}</span></div>`;
       }).join('') + '</div>';
     }
     h += '</section>';
@@ -1403,7 +1414,9 @@ pbody.addEventListener('click', e => {
   const act = t.dataset.act;
   if (act === 'home') return setView({type:'overview'});
   if (act === 'unknown'){ setView({type:'unknown'}); selectMode = true; renderPanel(); return; }
-  if (act === 'selmode'){ selectMode = !selectMode; if (!selectMode) selected.clear(); renderPanel(); return; }
+  if (act === 'coverpick'){ coverPick = !coverPick; const sc = pbody.scrollTop; renderPanel(); pbody.scrollTop = sc; return; }
+  if (act === 'coverreset'){ setCover(view.id, null); return; }
+  if (act === 'selmode'){ coverPick = false; selectMode = !selectMode; if (!selectMode) selected.clear(); renderPanel(); return; }
   if (act === 'more'){ showLimit += 240; const sc=pbody.scrollTop; renderPanel(); pbody.scrollTop=sc; return; }
   if (act === 'backup') return saveBackup();
   if (act === 'restore') return $('#inBackup').click();
@@ -1411,6 +1424,7 @@ pbody.addEventListener('click', e => {
   if (t.dataset.selmonth){ const ks = sheetList.filter(p=>monthKey(p)===t.dataset.selmonth).map(p=>p.key); const all = ks.every(k=>selected.has(k)); ks.forEach(k => all ? selected.delete(k) : selected.add(k)); refreshSel(); return; }
   const fr = e.target.closest('[data-key]'); if (!fr) return;
   const key = fr.dataset.key;
+  if (coverPick && !selectMode && view.type === 'region'){ setCover(view.id, key); return; }
   if (!selectMode || e.target.closest('[data-zoom]')){ openLight(key); return; }
   if (e.shiftKey && lastClicked){ const a = sheetList.findIndex(p=>p.key===lastClicked), b = sheetList.findIndex(p=>p.key===key); if (a>=0 && b>=0){ const [x,y] = a<b?[a,b]:[b,a]; for (let i=x;i<=y;i++) selected.add(sheetList[i].key); } }
   else selected.has(key) ? selected.delete(key) : selected.add(key);
@@ -1496,7 +1510,7 @@ async function showLight(key){
   const id = regionOf(p); const ch = id ? chainOf(id) : [];
   const reg = ch.length ? ch.slice(-2).reverse().map(x=>x.name).join(', ') : '지역 없음';
   const n = sheetList.findIndex(x=>x.key===key)+1;
-  $('#lightCap').innerHTML = `<span class="t">${n} / ${sheetList.length}</span><span>${p.takenAt ? new Date(p.takenAt).toLocaleString('ko-KR',{dateStyle:'medium',timeStyle:'short'}) : '날짜 없음'}</span><span>${esc(reg)}</span><span class="muted">${esc(p.name)}${p.file?'':' · 원본은 폴더를 다시 열면 보여요'}</span><span class="sp"></span>${selectMode?`<button type="button" data-lsel aria-pressed="${selected.has(key)}">${selected.has(key)?'선택됨':'선택'}</button>`:''}${id?'<button type="button" data-lmap>지도에서 보기</button>':''}`;
+  $('#lightCap').innerHTML = `<span class="t">${n} / ${sheetList.length}</span><span>${p.takenAt ? new Date(p.takenAt).toLocaleString('ko-KR',{dateStyle:'medium',timeStyle:'short'}) : '날짜 없음'}</span><span>${esc(reg)}</span><span class="muted">${esc(p.name)}${p.file?'':' · 원본은 폴더를 다시 열면 보여요'}</span><span class="sp"></span>${selectMode?`<button type="button" data-lsel aria-pressed="${selected.has(key)}">${selected.has(key)?'선택됨':'선택'}</button>`:''}${view.type==='region' && R.has(view.id) ? `<button type="button" data-lcover>${R.get(view.id).cover===key ? '대표 사진 ✓' : '대표 사진으로 선택'}</button>` : ''}${id?'<button type="button" data-lmap>지도에서 보기</button>':''}`;
   if (p.file){
     if (/\.hei[cf]$/i.test(p.name) && p.noPreview) return;
     try { lightURL = URL.createObjectURL(p.file); const ok = await loadImg(lightURL).then(()=>true, ()=>false); if (lightKey!==key) return; if (ok) img.src = lightURL; else { const d = await readURL(p.file); if (lightKey===key) img.src = d; } } catch(e){}
@@ -1507,6 +1521,7 @@ function closeLight(){ $('#light').hidden = true; if (lightURL){ URL.revokeObjec
 $('#lightPrev').onclick = () => stepLight(-1); $('#lightNext').onclick = () => stepLight(1); $('#lightClose').onclick = closeLight;
 $('#lightCap').addEventListener('click', e => {
   if (e.target.closest('[data-lsel]')){ selected.has(lightKey) ? selected.delete(lightKey) : selected.add(lightKey); refreshSel(); showLight(lightKey); }
+  if (e.target.closest('[data-lcover]')){ const r = R.get(view.id); if (r){ setCover(r.id, r.cover === lightKey ? null : lightKey); showLight(lightKey); } }
   if (e.target.closest('[data-lmap]')){ const id = regionOf(photos.get(lightKey)); closeLight(); openRegion(id, true); }
 });
 document.addEventListener('keydown', e => {
@@ -1546,14 +1561,15 @@ async function offerFile(filename, data){
 }
 function saveBackup(){
   const tags = {}; for (const p of photos.values()) if (p.manual) tags[p.key] = p.manual;
-  if (!Object.keys(tags).length){ toast('직접 넣은 지역이 아직 없어요.'); return; }
-  const data = JSON.stringify({app:'photo-map', version:3, savedAt:new Date().toISOString(), tags, recent}, null, 1);
+  if (!Object.keys(tags).length && ![...R.values()].some(r => r.cover)){ toast('직접 넣은 지역이나 대표 사진이 아직 없어요.'); return; }
+  const covers = {}; for (const r of R.values()) if (r.cover) covers[r.id] = r.cover;
+  const data = JSON.stringify({app:'photo-map', version:3, savedAt:new Date().toISOString(), tags, recent, covers}, null, 1);
   offerFile('photo-map-backup.json', data);
 }
 $('#inBackup').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   let j; try { j = JSON.parse(await f.text()); } catch(err){ toast('백업 파일을 읽지 못했어요. JSON 파일인지 확인해 주세요.'); return; }
-  const tags = j && j.tags; if (!tags || typeof tags !== 'object'){ toast('지역 정보가 없는 파일이에요.'); return; }
+  const tags = (j && j.tags) || {}; if (typeof tags !== 'object' || (!j.tags && !j.covers)){ toast('지역 정보가 없는 파일이에요.'); return; }
   let n = 0;
   for (const [k, id] of Object.entries(tags)){
     if (!R.has(id)) continue;
@@ -1561,108 +1577,153 @@ $('#inBackup').onchange = async e => {
     if (!p && j.version === 2){ const tail = '/' + k; p = [...photos.values()].find(x => ('/'+x.path).endsWith(tail)); }
     if (p){ p.manual = id; store.save(p); n++; }
   }
+  if (j.covers && typeof j.covers === 'object'){ for (const [id, k] of Object.entries(j.covers)) if (R.has(id) && photos.has(k)){ R.get(id).cover = k; n++; } saveCovers(); }
   if (Array.isArray(j.recent)) recent = [...new Set([...j.recent.filter(id=>R.has(id)), ...recent])].slice(0,12), store.setMeta('recent', recent);
   drawPhotos(); renderPanel();
   toast(n ? `${n}장에 지역을 불러왔어요.` : '맞는 사진을 찾지 못했어요. 사진 폴더를 먼저 열어 주세요.');
 };
 async function wipe(){
   if (!confirm('이 브라우저에 저장된 위치, 미리보기, 직접 넣은 지역을 모두 지울까요? 원본 사진은 그대로 있어요.')) return;
-  await store.clear(); photos.clear(); recent = []; locCache.clear(); drawPhotos(); setView({type:'empty'}); toast('모두 지웠어요.');
+  await store.clear(); for (const r of R.values()) r.cover = null; photos.clear(); recent = []; locCache.clear(); drawPhotos(); setView({type:'empty'}); toast('모두 지웠어요.');
 }
 
 /* ---------- share image ---------- */
-$('#btnShare').onclick = async () => {
+async function renderShare(style){
   const mainBB = r => { if (r._mbb) return r._mbb; const ps = r.polys.map(p => { const ring = p[0]; let a=Infinity,b=Infinity,c=-Infinity,d=-Infinity,ar=0; for (let i=0,j=ring.length-1;i<ring.length;j=i++){ const x=ring[i][0], y=ring[i][1]; if(x<a)a=x; if(x>c)c=x; if(y<b)b=y; if(y>d)d=y; ar += (ring[j][0]+x)*(ring[j][1]-y); } return {bb:[a,b,c,d], area: Math.abs(ar)*Math.cos((b+d)/2*Math.PI/180)}; }); const m = ps.reduce((q,p) => p.area > q.area ? p : q, ps[0]); const lim = Math.max(r.level === 0 ? 15 : 0, 1.5*Math.hypot(m.bb[2]-m.bb[0], m.bb[3]-m.bb[1])); const mx=(m.bb[0]+m.bb[2])/2, my=(m.bb[1]+m.bb[3])/2; const o = [...m.bb]; for (const p of ps){ if (Math.hypot((p.bb[0]+p.bb[2])/2-mx, (p.bb[1]+p.bb[3])/2-my) <= lim){ o[0]=Math.min(o[0],p.bb[0]); o[1]=Math.min(o[1],p.bb[1]); o[2]=Math.max(o[2],p.bb[2]); o[3]=Math.max(o[3],p.bb[3]); } } return r._mbb = o; };
-  const deep = groupAt(2).filter(g => g.r.polys); if (!deep.length){ toast('지도에 채운 지역이 아직 없어요.'); return; }
+  const deep = groupAt(2).filter(g => g.r.polys); if (!deep.length) return null;
   let sa=Infinity, sb=Infinity, sc=-Infinity, sd=-Infinity; for (const g of deep){ const bb = mainBB(g.r); if (bb[2]-bb[0] > 180) continue; sa=Math.min(sa,bb[0]); sb=Math.min(sb,bb[1]); sc=Math.max(sc,bb[2]); sd=Math.max(sd,bb[3]); }
   const span = isFinite(sa) ? Math.max(sc-sa, sd-sb) : 360; const SL = span > 30 ? 0 : span > 5 ? 1 : 2;
   const gs = groupAt(SL).filter(g => g.r.polys);
-  const W = 1080, H = 1350, MH = 740, pad = 60;
+  let budget = 160; const mk = async p => { if (budget-- > 0) await makeThumb(p); };
+  for (const gr of [...deep].sort((a,b) => b.list.length - a.list.length).slice(0, 10)){ if (repOf(gr)) continue; const p = gr.list.find(x => x.file && !x.noPreview); if (p) await mk(p); }
+  for (const gr of gs) for (const p of collageOf(gr, 10)) if (!p.thumb && p.file && !p.noPreview) await mk(p);
+  const W = 1080, H = 1350, isRank = style !== 'bubble';
+  const topAll = [...deep].sort((a,b) => b.list.length - a.list.length), nTop = Math.min(topAll.length, 8), nHero = Math.min(nTop, 3), listRows = Math.ceil(Math.max(0, nTop - 3)/2);
+  const HEAD = isRank ? 196 : 132, STRIP = isRank ? 322 : 0, LIST = isRank && listRows ? 24 + listRows*86 : 0;
   const C = n => css(n), FONT = css('--sans'), EDGE = css('--edgefont');
+  const box = !isRank ? {x:0, y:HEAD, w:W, h:H-HEAD} : {x:0, y:HEAD, w:W, h:H-HEAD-STRIP-LIST};
+  const fit = !isRank ? {x:300, y:HEAD+50, w:W-600, h:H-HEAD-100} : {x:50, y:HEAD+36, w:W-100, h:box.h-72};
   const merc = (lng, lat) => [lng, Math.log(Math.tan(Math.PI/4 + Math.max(-85,Math.min(85,lat))*Math.PI/360))*180/Math.PI];
   let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
   for (const g of gs){ const [a,b,c,d] = mainBB(g.r); if (c-a > 180) continue; const p=merc(a,b), q=merc(c,d); x0=Math.min(x0,p[0]); y0=Math.min(y0,p[1]); x1=Math.max(x1,q[0]); y1=Math.max(y1,q[1]); }
   if (!isFinite(x0)){ x0=-170; x1=190; y0=-60; y1=80; }
-  const s = Math.min((W-2*pad)/Math.max(x1-x0,.05), (MH-2*pad)/Math.max(y1-y0,.05));
-  const cx=(x0+x1)/2, cy=(y0+y1)/2;
-  const P = (lng,lat) => { const m = merc(lng,lat); return [W/2 + (m[0]-cx)*s, MH/2 - (m[1]-cy)*s]; };
+  const s = Math.min(fit.w/Math.max(x1-x0,.05), fit.h/Math.max(y1-y0,.05));
+  const mcx=(x0+x1)/2, mcy=(y0+y1)/2, fcx = fit.x+fit.w/2, fcy = fit.y+fit.h/2;
+  const P = (lng,lat) => { const m = merc(lng,lat); return [fcx + (m[0]-mcx)*s, fcy - (m[1]-mcy)*s]; };
   const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
   const path = (polys, minPx) => { g.beginPath(); for (const poly of polys) for (const ring of poly){ const pts = ring.map(pt => P(pt[0],pt[1])); if (minPx){ let a=Infinity,b=Infinity,cc=-Infinity,d=-Infinity; for (const q of pts){ if(q[0]<a)a=q[0]; if(q[0]>cc)cc=q[0]; if(q[1]<b)b=q[1]; if(q[1]>d)d=q[1]; } if (cc-a < minPx && d-b < minPx) continue; } pts.forEach((q,i)=> i ? g.lineTo(q[0],q[1]) : g.moveTo(q[0],q[1])); g.closePath(); } };
   const cover = (im, x, y, w, h) => { const k = Math.max(w/im.width, h/im.height); g.drawImage(im, x+(w-im.width*k)/2, y+(h-im.height*k)/2, im.width*k, im.height*k); };
   const imgCache = new Map(); const img = async src => { if (!imgCache.has(src)) imgCache.set(src, loadImg(src).catch(() => null)); return imgCache.get(src); };
   const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); };
+  const fitText = (t, max) => { if (g.measureText(t).width <= max) return t; while (t.length > 1 && g.measureText(t + '…').width > max) t = t.slice(0,-1); return t + '…'; };
+  const nameOf = r => r.id.startsWith('KR1-') ? shortName(r) : r.name;
+  const parentOf = r => { const ch = chainOf(r.id); const p = ch[ch.length-2]; return p ? nameOf(p) : ''; };
   // map
-  g.save(); g.beginPath(); g.rect(0,0,W,MH); g.clip();
-  g.fillStyle = C('--sea'); g.fillRect(0,0,W,MH);
-  const inView = r => { const b=r.bbox; const a=P(b[0],b[3]), z=P(b[2],b[1]); return !(z[0]<-50||a[0]>W+50||z[1]<-50||a[1]>MH+50); };
+  g.fillStyle = C('--surface'); g.fillRect(0,0,W,H);
+  g.save(); g.beginPath(); g.rect(box.x, box.y, box.w, box.h); g.clip();
+  g.fillStyle = C('--sea'); g.fillRect(box.x, box.y, box.w, box.h);
+  const inView = r => { const b=r.bbox; const a=P(b[0],b[3]), z=P(b[2],b[1]); return !(z[0]<-50||a[0]>W+50||z[1]<box.y-50||a[1]>box.y+box.h+50); };
   g.fillStyle = C('--land'); g.strokeStyle = C('--coast'); g.lineWidth = 1;
   for (const r of COUNTRIES){ if (!inView(r)) continue; path(r.polys); g.fill('evenodd'); path(r.polys, 3); g.stroke(); }
   if (SL >= 1){ g.strokeStyle = C('--border'); g.setLineDash([4,3]); g.lineWidth = .8; for (const r of R.values()){ if (r.level !== SL || !r.polys || !inView(r)) continue; path(r.polys, 6); g.stroke(); } g.setLineDash([]); }
   for (const gr of [...gs].sort((a,b) => a.r.level - b.r.level)){
-    const rep = repOf(gr); path(gr.r.polys); g.save(); g.clip('evenodd');
-    const b = gr.r.bbox; const a = P(b[0],b[3]), z = P(b[2],b[1]);
-    const im = rep ? await img(rep.thumb) : null;
-    if (im) cover(im, a[0], a[1], z[0]-a[0], z[1]-a[1]); else { g.fillStyle = C('--edge'); g.globalAlpha = .45; g.fillRect(a[0],a[1],z[0]-a[0],z[1]-a[1]); g.globalAlpha = 1; }
+    const pics = collageOf(gr, 10).filter(p => p.thumb); path(gr.r.polys); g.save(); g.clip('evenodd');
+    const b = gr.r.bbox; const a = P(b[0],b[3]), z = P(b[2],b[1]), bw = z[0]-a[0], bh = z[1]-a[1];
+    if (pics.length){
+      const cells = gridCells(pics.length, bw/Math.max(bh, 1e-6), bw, bh);
+      for (let k = 0; k < pics.length; k++){ const [qx, qy, qw, qh] = cells[k], im = await img(pics[k].thumb); if (!im) continue; g.save(); g.beginPath(); g.rect(a[0]+qx, a[1]+qy, qw, qh); g.clip(); cover(im, a[0]+qx, a[1]+qy, qw, qh); g.restore(); }
+      if (pics.length > 1){ g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 1.5; for (const [qx, qy, qw, qh] of cells) g.strokeRect(a[0]+qx, a[1]+qy, qw, qh); }
+    } else { g.fillStyle = C('--edge'); g.globalAlpha = .45; g.fillRect(a[0], a[1], bw, bh); g.globalAlpha = 1; }
     g.restore(); path(gr.r.polys, 8); g.strokeStyle = C('--ink'); g.lineWidth = 1.6; g.stroke();
   }
-  // name pins on map
-  const boxes = [];
-  for (const gr of [...gs].sort((a,b) => b.list.length - a.list.length)){
-    const [px, py] = P(gr.r.lng, gr.r.lat); if (px < 0 || px > W || py < 0 || py > MH) continue;
-    const name = gr.r.id.startsWith('KR1-') ? shortName(gr.r) : gr.r.name, cnt = String(gr.list.length);
-    g.font = `600 21px ${FONT}`; const tw = g.measureText(name).width; g.font = `700 17px ${FONT}`; const bw = Math.max(26, g.measureText(cnt).width + 16);
-    const w = 14 + tw + 8 + bw + 5, h = 34; const mb = mainBB(gr.r); const tA = P(mb[0], mb[3]), tB = P(mb[2], mb[1]); const small = (tB[0]-tA[0]) < w + 20 || (tB[1]-tA[1]) < 90;
-    const x = Math.max(4, Math.min(W-w-4, px - w/2)), y = Math.max(4, Math.min(MH-h-4, small ? Math.min(py, tA[1]) - h - 12 : py - h/2));
-    if (boxes.some(q => !(x+w < q[0] || x > q[2] || y+h < q[1] || y > q[3]))) continue; boxes.push([x-3, y-3, x+w+3, y+h+3]);
-    if (small){ g.strokeStyle = C('--ink'); g.lineWidth = 1.5; g.beginPath(); g.moveTo(Math.max(x+12, Math.min(x+w-12, px)), y+h); g.lineTo(px, py); g.stroke(); g.fillStyle = C('--ink'); g.beginPath(); g.arc(px, py, 3, 0, 7); g.fill(); }
-    g.save(); g.shadowColor = 'rgba(0,0,0,.28)'; g.shadowBlur = 6; g.shadowOffsetY = 1; g.fillStyle = C('--surface'); rr(x, y, w, h, h/2); g.fill(); g.restore();
-    g.fillStyle = C('--ink'); g.font = `600 21px ${FONT}`; g.textBaseline = 'middle'; g.fillText(name, x+14, y+h/2+1);
-    g.fillStyle = C('--grease'); rr(x+14+tw+8, y+5, bw, h-10, (h-10)/2); g.fill();
-    g.fillStyle = '#fff'; g.font = `700 17px ${FONT}`; g.textAlign = 'center'; g.fillText(cnt, x+14+tw+8+bw/2, y+h/2+1); g.textAlign = 'left';
+  // ranking (deepest known place)
+  const top = [...deep].sort((a,b) => b.list.length - a.list.length);
+  const thumbOf = gr => { const r = repOf(gr); return r ? r.thumb : null; };
+  if (style === 'bubble'){
+    const N = Math.min(top.length, 10), items = top.slice(0, N).map((gr, i) => ({gr, i, p: P(gr.r.lng, gr.r.lat)}));
+    let L = items.filter(t => t.p[0] < W/2), Rr = items.filter(t => t.p[0] >= W/2);
+    while (Math.abs(L.length - Rr.length) > 1){ if (L.length > Rr.length){ L.sort((a,b)=>a.p[0]-b.p[0]); Rr.push(L.pop()); } else { Rr.sort((a,b)=>a.p[0]-b.p[0]); L.push(Rr.shift()); } }
+    const bw = 262, bh = 78, gap = 14, top0 = box.y + 22, bot0 = box.y + box.h - 22;
+    const place = (col, x) => { col.sort((a,b) => a.p[1]-b.p[1]); let y = top0; for (const t of col){ t.y = Math.max(y, Math.min(bot0 - bh, t.p[1] - bh/2)); y = t.y + bh + gap; } let yb = bot0; for (let k = col.length-1; k >= 0; k--){ const t = col[k]; t.y = Math.min(t.y, yb - bh); yb = t.y - gap; } for (const t of col) t.x = x; };
+    place(L, 24); place(Rr, W - 24 - bw);
+    const all2 = [...L, ...Rr];
+    for (const t of all2){ const ex = t.x < W/2 ? t.x + bw : t.x, ey = t.y + bh/2; const mx = t.x < W/2 ? ex + 22 : ex - 22; g.strokeStyle = C('--ink'); g.lineWidth = 1.5; g.beginPath(); g.moveTo(ex, ey); g.lineTo(mx, ey); g.lineTo(t.p[0], t.p[1]); g.stroke(); g.fillStyle = C('--surface'); g.beginPath(); g.arc(t.p[0], t.p[1], 5, 0, 7); g.fill(); g.strokeStyle = C('--grease'); g.lineWidth = 2.5; g.stroke(); }
+    for (const t of all2){
+      g.save(); g.shadowColor = 'rgba(0,0,0,.22)'; g.shadowBlur = 10; g.shadowOffsetY = 2; g.fillStyle = C('--surface'); rr(t.x, t.y, bw, bh, 14); g.fill(); g.restore();
+      const th = thumbOf(t.gr), im = th ? await img(th) : null, tx = t.x + 12, ty = t.y + 11, ts = bh - 22;
+      g.save(); rr(tx, ty, ts, ts, 10); g.clip(); if (im) cover(im, tx, ty, ts, ts); else { g.fillStyle = C('--edge'); g.fillRect(tx, ty, ts, ts); } g.restore();
+      const cnt = String(t.gr.list.length); g.font = `600 30px ${EDGE}`; const cw2 = g.measureText(cnt).width; g.fillStyle = C('--grease'); g.textBaseline = 'alphabetic'; g.fillText(cnt, t.x + bw - 16 - cw2 - 16, t.y + 46); g.font = `15px ${FONT}`; g.fillStyle = C('--muted'); g.fillText('장', t.x + bw - 16 - 14, t.y + 46);
+      const textX = tx + ts + 12, maxW = bw - (textX - t.x) - cw2 - 40;
+      g.fillStyle = C('--ink'); g.font = `700 20px ${FONT}`; g.fillText(fitText(nameOf(t.gr.r), maxW), textX, t.y + 36);
+      g.fillStyle = C('--muted'); g.font = `15px ${FONT}`; g.fillText(fitText(parentOf(t.gr.r), maxW), textX, t.y + 60);
+    }
+  } else {
+    const N = Math.min(top.length, 8), placed = [];
+    for (let i = 0; i < N; i++){
+      const gr = top[i], [px, py] = P(gr.r.lng, gr.r.lat); let qx = px, qy = py;
+      const hit = (x, y) => placed.some(q => Math.hypot(q[0]-x, q[1]-y) < 34);
+      if (hit(qx, qy)){ outer: for (const rad of [36, 58, 80]) for (let k = 0; k < 12; k++){ const ang = -Math.PI/2 + k*Math.PI/6, x = px + rad*Math.cos(ang), y = py + rad*Math.sin(ang); if (!hit(x, y) && y > box.y + 18 && y < box.y + box.h - 18 && x > 18 && x < W - 18){ qx = x; qy = y; break outer; } } }
+      placed.push([qx, qy]);
+      if (qx !== px || qy !== py){ g.strokeStyle = C('--ink'); g.lineWidth = 1.4; g.beginPath(); g.moveTo(px, py); g.lineTo(qx, qy); g.stroke(); g.fillStyle = C('--ink'); g.beginPath(); g.arc(px, py, 3, 0, 7); g.fill(); }
+      g.fillStyle = C('--grease'); g.beginPath(); g.arc(qx, qy, 15, 0, 7); g.fill(); g.strokeStyle = C('--surface'); g.lineWidth = 2.5; g.stroke();
+      g.fillStyle = '#fff'; g.font = `600 19px ${EDGE}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(i+1), qx, qy+1); g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    }
   }
   g.restore();
-  // footer: title, stats, codex
+  // header
   const st = visitStats(); const all = [...photos.values()].filter(regionOf);
-  const visitedC = COUNTRIES.filter(r => st.has(r.id)).sort((a,b) => st.get(b.id).n - st.get(a.id).n);
-  const k1 = KR1S.filter(r => st.has(r.id)).length, k2 = [...st.keys()].filter(id => id.startsWith('KR2-')).length;
-  g.fillStyle = C('--surface'); g.fillRect(0, MH, W, H-MH);
-  g.fillStyle = C('--line'); g.fillRect(0, MH, W, 1);
-  g.textBaseline = 'alphabetic';
-  g.fillStyle = C('--ink'); g.font = `700 40px ${FONT}`; g.fillText('사진 지도', 60, MH+66);
-  g.fillStyle = C('--muted'); g.font = `24px ${FONT}`; g.fillText(`사진 ${all.length}장 · 나라 ${visitedC.length}곳 · 한국 시·군·구 ${k2}/${TOTAL_KR2}곳`, 60, MH+104);
-  g.fillStyle = C('--grease'); g.fillRect(W-60-110, MH+50, 110, 7);
-  const COLS = 8, cw = (W-120)/COLS, ch = 112;
-  const tile = async (r, x, y) => {
-    const sv = st.get(r.id), p2 = new Path2D(silhouette(r)), k = .64, ox = x + cw/2 - 32, oy = y;
-    g.save(); g.translate(ox, oy); g.scale(k, k);
-    if (sv){ const im = sv.rep ? await img(sv.rep.thumb) : null; g.save(); g.clip(p2, 'evenodd'); if (im) cover(im, 0, 0, 100, 100); else { g.fillStyle = C('--edge'); g.globalAlpha = .55; g.fillRect(0,0,100,100); g.globalAlpha = 1; } g.restore(); g.strokeStyle = C('--ink'); g.lineWidth = 1.4/k; g.stroke(p2); }
-    else { g.fillStyle = C('--bg'); g.fill(p2, 'evenodd'); g.strokeStyle = C('--border'); g.lineWidth = 1.2/k; g.setLineDash([3/k, 2/k]); g.stroke(p2); g.setLineDash([]); }
-    g.restore();
-    const name = r.id.startsWith('KR1-') ? shortName(r) : r.name;
-    g.textAlign = 'center'; g.fillStyle = sv ? C('--ink') : C('--muted'); g.font = `${sv ? 600 : 400} 17px ${FONT}`;
-    let nm = name; while (g.measureText(nm).width > cw-8 && nm.length > 2) nm = nm.slice(0,-1); if (nm !== name) nm += '…';
-    g.fillText(nm, x + cw/2, y + 86);
-    if (sv){ g.fillStyle = C('--grease'); g.font = `600 16px ${EDGE}`; g.fillText(`${sv.n}`, x + cw/2, y + 106); }
-    g.textAlign = 'left';
-  };
-  const label = (text, num, y) => { g.font = `600 20px ${FONT}`; g.fillStyle = C('--ink'); g.fillText(text, 60, y); const w = g.measureText(text + ' ').width; g.fillStyle = C('--grease'); g.font = `600 22px ${EDGE}`; g.fillText(num, 60 + w, y); };
-  let y = MH + 152;
-  label('한국 시·도', `${k1}/${KR1S.length}`, y); y += 16;
-  for (let i = 0; i < KR1S.length; i++) await tile(KR1S[i], 60 + (i % COLS)*cw, y + Math.floor(i/COLS)*ch);
-  y += Math.ceil(KR1S.length/COLS)*ch + 30;
-  label('나라', `${visitedC.length}곳`, y); y += 16;
-  const shown = visitedC.length > COLS ? visitedC.slice(0, COLS-1) : visitedC;
-  for (let i = 0; i < shown.length; i++) await tile(shown[i], 60 + i*cw, y);
-  if (visitedC.length > COLS){ g.textAlign = 'center'; g.fillStyle = C('--muted'); g.font = `600 22px ${FONT}`; g.fillText(`+${visitedC.length - shown.length}`, 60 + (COLS-1)*cw + cw/2, y + 44); g.textAlign = 'left'; }
-  if (!visitedC.length){ g.fillStyle = C('--muted'); g.font = `18px ${FONT}`; g.fillText('아직 없어요', 60, y + 40); }
-  c.toBlob(b => b && offerFile('photo-map.png', b), 'image/png');
-};
+  const nC = COUNTRIES.filter(r => st.has(r.id)).length, nK = [...st.keys()].filter(id => id.startsWith('KR2-')).length;
+  const ts = all.map(p => p.takenAt).filter(Boolean); const ym = t => { const d = new Date(t); return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}`; };
+  const period = ts.length ? (ym(Math.min(...ts)) === ym(Math.max(...ts)) ? ym(Math.min(...ts)) : `${ym(Math.min(...ts))} – ${ym(Math.max(...ts))}`) : '';
+  g.fillStyle = C('--surface'); g.fillRect(0, 0, W, HEAD); g.fillStyle = C('--line'); g.fillRect(0, HEAD-1, W, 1);
+  g.fillStyle = C('--ink'); g.font = `700 40px ${FONT}`; g.textBaseline = 'alphabetic'; g.fillText('사진 지도', 60, 70);
+  if (period){ g.font = `600 26px ${EDGE}`; g.fillStyle = C('--muted'); const pw = g.measureText(period).width; g.fillText(period, W - 60 - pw, 68); }
+  if (!isRank){ g.fillStyle = C('--muted'); g.font = `23px ${FONT}`; g.fillText(`사진 ${all.length}장 · ${nC}개 나라 · ${top.length}곳${nK ? ` · 한국 시·군·구 ${nK}/${TOTAL_KR2}` : ''}`, 60, 106); }
+  else {
+    const stats = [[String(all.length), '사진'], [String(top.length), '장소'], [String(nC), '나라']]; if (nK) stats.push([`${nK}/${TOTAL_KR2}`, '한국 시·군·구']);
+    let sx = 60; for (const [v, l] of stats){ g.fillStyle = C('--ink'); g.font = `600 46px ${EDGE}`; g.fillText(v, sx, 150); const vw = g.measureText(v).width; g.fillStyle = C('--muted'); g.font = `18px ${FONT}`; g.fillText(l, sx, 176); const lw = g.measureText(l).width; sx += Math.max(vw, lw) + 48; }
+    // film strip with top 3
+    const sy = box.y + box.h; g.fillStyle = C('--rebate'); g.fillRect(0, sy, W, STRIP);
+    const perf = y => { g.fillStyle = C('--hole'); for (let x = 14; x < W - 14; x += 22){ rr(x, y, 12, 8, 2); g.fill(); } };
+    perf(sy + 10); perf(sy + STRIP - 18);
+    const fw = (W - 80 - 2*18)/3, fh = Math.round(fw*2/3), fy = sy + 34;
+    for (let i = 0; i < nHero; i++){
+      const gr = topAll[i], fx = 40 + i*(fw + 18), th = thumbOf(gr), im = th ? await img(th) : null;
+      g.fillStyle = '#000'; g.fillRect(fx, fy, fw, fh);
+      if (im){ g.save(); g.beginPath(); g.rect(fx, fy, fw, fh); g.clip(); cover(im, fx, fy, fw, fh); g.restore(); }
+      g.fillStyle = C('--edge'); g.font = `600 22px ${EDGE}`; g.fillText(`${i+1}`, fx, fy + fh + 34);
+      const nx = fx + 22; g.font = `700 20px ${FONT}`; g.fillStyle = '#F3EEE4'; const cnt = `${gr.list.length}`; g.font = `600 22px ${EDGE}`; const cwid = g.measureText(cnt).width;
+      g.font = `700 20px ${FONT}`; g.fillText(fitText(nameOf(gr.r), fw - 22 - cwid - 12), nx, fy + fh + 34);
+      g.fillStyle = C('--edge'); g.font = `600 22px ${EDGE}`; g.fillText(cnt, fx + fw - cwid, fy + fh + 34);
+    }
+    // list 4..8
+    if (listRows){
+      const ly = sy + STRIP + 22, colW = (W - 120 - 40)/2;
+      for (let i = 3; i < nTop; i++){
+        const gr = topAll[i], k = i - 3, col = k % 2, row = Math.floor(k/2), x = 60 + col*(colW + 40), y = ly + row*86;
+        g.fillStyle = C('--grease'); g.font = `600 26px ${EDGE}`; g.fillText(String(i+1), x, y + 40);
+        const th = thumbOf(gr), im = th ? await img(th) : null, tx = x + 30, tsz = 60;
+        g.save(); rr(tx, y + 6, tsz, tsz, 8); g.clip(); if (im) cover(im, tx, y + 6, tsz, tsz); else { g.fillStyle = C('--edge'); g.fillRect(tx, y+6, tsz, tsz); } g.restore();
+        const textX = tx + tsz + 14, tw = colW - (textX - x);
+        const cnt = `${gr.list.length}장`; g.font = `600 19px ${FONT}`; const cwid = g.measureText(cnt).width;
+        g.fillStyle = C('--ink'); g.font = `700 20px ${FONT}`; g.fillText(fitText(nameOf(gr.r), tw - cwid - 10), textX, y + 28);
+        g.fillStyle = C('--muted'); g.font = `600 19px ${FONT}`; g.fillText(cnt, x + colW - cwid, y + 28);
+        g.font = `15px ${FONT}`; g.fillText(fitText(parentOf(gr.r), tw), textX, y + 50);
+        g.fillStyle = C('--line'); rr(textX, y + 58, tw, 6, 3); g.fill(); g.fillStyle = C('--grease'); rr(textX, y + 58, Math.max(6, tw * gr.list.length / topAll[0].list.length), 6, 3); g.fill();
+      }
+      if (topAll.length > nTop && nTop % 2 === 1){ const k = nTop - 3, x = 60 + (k % 2)*(colW + 40), y = ly + Math.floor(k/2)*86; g.fillStyle = C('--muted'); g.font = `18px ${FONT}`; g.fillText(`그 밖에 ${topAll.length - nTop}곳`, x + 30, y + 40); }
+    }
+  }
+  return c;
+}
+
+$('#btnShare').onclick = async () => { const btn = $('#btnShare'); btn.disabled = true; const t0 = btn.textContent; btn.textContent = '이미지 만드는 중…'; try { const c = await renderShare('rank'); if (!c){ toast('지도에 채운 지역이 아직 없어요.'); return; } c.toBlob(b => b && offerFile('photo-map.png', b), 'image/png'); } finally { btn.disabled = false; btn.textContent = t0; } };
 
 /* ---------- start ---------- */
 (async () => {
   renderPanel();
   if (await store.open()){
-    const rows = await store.all(); recent = (await store.meta('recent')) || [];
+    const rows = await store.all(); recent = (await store.meta('recent')) || []; const cv0 = (await store.meta('covers')) || {}; for (const [id, k] of Object.entries(cv0)) if (R.has(id)) R.get(id).cover = k;
     for (const p of rows){ if (p.lat!==null && p.lat!==undefined && !p.auto) p.auto = locate(p.lat,p.lng); photos.set(p.key, p); }
     if (rows.length){ setView({type:'overview'}); drawPhotos(); fitAll(); }
     try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch(e){}
